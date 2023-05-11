@@ -21,7 +21,7 @@ import (
 
 var ADRESSE string = "localhost"                           // adresse de base pour la Partie 2
 var FICHIER_SOURCE string = "./conseillers-municipaux.txt" // fichier dans lequel piocher des personnes
-var TAILLE_SOURCE int = 8                                  // inferieure au nombre de lignes du fichier, pour prendre une ligne au hasard
+var TAILLE_SOURCE int = 9                                  // inferieure au nombre de lignes du fichier, pour prendre une ligne au hasard
 var TAILLE_G int = 5                                       // taille du tampon des gestionnaires
 var NB_G int = 2                                           // nombre de gestionnaires
 var NB_P int = 2                                           // nombre de producteurs
