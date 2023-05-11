@@ -12,16 +12,16 @@ import (
 	"strings"
 	"time"
 
-	st "github.com/Yukhoi/PC3R/client/structures"
+	st "github.com/Yukhoi/PC3R_TME4/client/structures"
 
 	// contient la structure Personne
-	tr "github.com/Yukhoi/PC3R/client/travaux"
+	tr "github.com/Yukhoi/PC3R_TME4/client/travaux"
 	// contient les fonctions de travail sur les Personnes
 )
 
 var ADRESSE string = "localhost"                           // adresse de base pour la Partie 2
 var FICHIER_SOURCE string = "./conseillers-municipaux.txt" // fichier dans lequel piocher des personnes
-var TAILLE_SOURCE int = 450000                             // inferieure au nombre de lignes du fichier, pour prendre une ligne au hasard
+var TAILLE_SOURCE int = 8                                  // inferieure au nombre de lignes du fichier, pour prendre une ligne au hasard
 var TAILLE_G int = 5                                       // taille du tampon des gestionnaires
 var NB_G int = 2                                           // nombre de gestionnaires
 var NB_P int = 2                                           // nombre de producteurs
@@ -180,19 +180,22 @@ func proxy(port string, requete chan message_dist) {
 func lecteur(lectureC chan message_lec) {
 	for {
 		m := <-lectureC
+		fmt.Println("lecteur" + strconv.Itoa(m.ligne))
 		file, err := os.Open(FICHIER_SOURCE)
 		if err != nil {
 			log.Fatal(err)
 		}
 		scanner := bufio.NewScanner(file)
+
 		//sauter la première ligne
 		_ = scanner.Scan()
+
 		//sauter les premières m.ligne-ième lignes
 		for i := 0; i < m.ligne; i++ {
 			_ = scanner.Scan()
 		}
 		result := scanner.Scan()
-		if result == false {
+		if !result {
 			log.Fatal(err)
 		} else {
 			m.retour <- scanner.Text()
@@ -205,9 +208,9 @@ func lecteur(lectureC chan message_lec) {
 // Si le statut est V, ils initialise le paquet de personne puis le repasse aux gestionnaires
 // Si le statut est R, ils travaille une fois sur le paquet puis le repasse aux gestionnaires
 // Si le statut est C, ils passent le paquet au collecteur
-func ouvrier(deGest chan personne_int, toGest chan personne_int, toCollec chan personne_int) {
+func ouvrier(fromGest chan personne_int, toGest chan personne_int, toCollec chan personne_int) {
 	for {
-		personne := <-deGest
+		personne := <-fromGest
 		if personne.donne_statut() == "V" {
 			personne.initialise()
 			toGest <- personne
@@ -223,10 +226,11 @@ func ouvrier(deGest chan personne_int, toGest chan personne_int, toCollec chan p
 // Partie 1: les producteurs cree des personne_int implementees par des personne_emp initialement vides,
 // de statut V mais contenant un numéro de ligne (pour etre initialisee depuis le fichier texte)
 // la personne est passée aux gestionnaires
-func producteur(lectureC chan message_lec, prodC chan personne_int) {
+func producteur(lecture chan message_lec, prod chan personne_int) {
 	for {
-		personne := personne_emp{ligne: rand.Intn(TAILLE_SOURCE), personne: pers_vide, afaire: make([]func(st.Personne) st.Personne, 0), statut: "V", lecteur: lectureC}
-		prodC <- personne_int(&personne)
+		personne := personne_emp{ligne: rand.Intn(TAILLE_SOURCE), personne: pers_vide, afaire: make([]func(st.Personne) st.Personne, 0), statut: "V", lecteur: lecture}
+		prod <- personne_int(&personne)
+		fmt.Println("product")
 	}
 }
 
@@ -250,38 +254,48 @@ func producteur_distant(deProdVersGest chan personne_int, requeteChan chan messa
 // ils les passent aux ouvriers quand ils sont disponibles
 // ATTENTION: la famine des ouvriers doit être évitée: si les producteurs inondent les gestionnaires de paquets, les ouvrier ne pourront
 // plus rendre les paquets surlesquels ils travaillent pour en prendre des autres
-func gestionnaire(deProd chan personne_int, versOuvrier chan personne_int, deOuvrier chan personne_int) {
+func gestionnaire(fromProd chan personne_int, toOuvrier chan personne_int, fromOuvrier chan personne_int) {
 	queue := make([]personne_int, 0)
 	for {
 		if len(queue) == TAILLE_G {
 			//full
-			versOuvrier <- queue[0]
+			toOuvrier <- queue[0]
 			queue = queue[1:]
+			fmt.Println("ges give to ouv")
 		} else if len(queue) == 0 {
 			//vide
 			select {
-			case personne := <-deProd:
+			case personne := <-fromProd:
 				queue = append(queue, personne)
-			case personne := <-deOuvrier:
+				fmt.Println("ges recieve from prod")
+			case personne := <-fromOuvrier:
 				queue = append(queue, personne)
+				fmt.Println("ges recieve from ouv")
+
 			}
 		} else if len(queue) < TAILLE_G-1 {
 			//2 places pour paquet de ouvrier
 			select {
-			case personne := <-deProd:
+			case personne := <-fromProd:
 				queue = append(queue, personne)
-			case personne := <-deOuvrier:
+				//fmt.Println("ges recieve from prod")
+			case personne := <-fromOuvrier:
 				queue = append(queue, personne)
-			case versOuvrier <- queue[0]:
+				//fmt.Println("ges recieve from ouv")
+			case toOuvrier <- queue[0]:
 				queue = queue[1:]
+				//fmt.Println("ges give to ouv")
 			}
 		} else {
 			//pas assez de places pour paquet de producteur
 			select {
-			case personne := <-deOuvrier:
+			case personne := <-fromOuvrier:
 				queue = append(queue, personne)
-			case versOuvrier <- queue[0]:
+				//fmt.Println("ges recieve from ouv")
+			case fromOuvrier <- queue[0]:
 				queue = queue[1:]
+				//fmt.Println("ges give to ouv")
+
 			}
 		}
 	}
@@ -305,13 +319,16 @@ func collecteur(toCollecteur chan personne_int, mainChan chan int) {
 
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano()) // graine pour l'aleatoire
+
 	if len(os.Args) < 3 {
 		fmt.Println("Format: client <port> <millisecondes d'attente>")
 		return
 	}
+
 	port := os.Args[1]                    // utile pour la partie 2
 	millis, _ := strconv.Atoi(os.Args[2]) // duree du timeout
 	fintemps := make(chan int)
+
 	// creer les canaux
 	lecture := make(chan message_lec)
 	fromProdToGest := make(chan personne_int)
@@ -321,6 +338,7 @@ func main() {
 
 	requete := make(chan message_dist)
 	id_frais_chan := make(chan int)
+
 	// lancer les goroutines (parties 1 et 2): 1 lecteur, 1 collecteur, des producteurs, des gestionnaires, des ouvriers
 	go func() {
 		lecteur(lecture)
@@ -343,7 +361,7 @@ func main() {
 			ouvrier(fromGestToOuvrier, fromOuvrierToGest, fromOuvrierToCollec)
 		}()
 	}
-	// lancer les goroutines (partie 2): des producteurs distants, un proxy
+	//lancer les goroutines (partie 2): des producteurs distants, un proxy
 	go func() {
 		proxy(port, requete)
 	}()

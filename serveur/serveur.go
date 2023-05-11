@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	st "../client/structures"
-	tr "./travaux"
+	st "github.com/Yukhoi/PC3R_TME4/client/structures"
+	tr "github.com/Yukhoi/PC3R_TME4/serveur/travaux"
 )
 
 var ADRESSE = "localhost"

@@ -3,7 +3,7 @@ package travaux
 import (
 	"math/rand"
 
-	st "github.com/Yukhoi/PC3R/client/structures"
+	st "github.com/Yukhoi/PC3R_TME4/client/structures"
 )
 
 var noms = []string{"BALKANY", "CAHUZAC", "TAPIE", "FERRAND", "GUEANT"}
